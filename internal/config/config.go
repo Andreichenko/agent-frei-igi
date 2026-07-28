@@ -6,7 +6,8 @@ import (
 
 // Config holds all configuration values for the application.
 type Config struct {
-	HTTPAddr string
+	HTTPAddr    string
+	DatabaseURL string
 }
 
 // Load reads config from environment variables and sets defaults.
@@ -16,7 +17,10 @@ func Load() *Config {
 		addr = ":8080"
 	}
 
+	dbURL := os.Getenv("DATABASE_URL")
+
 	return &Config{
-		HTTPAddr: addr,
+		HTTPAddr:    addr,
+		DatabaseURL: dbURL,
 	}
 }
