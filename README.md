@@ -178,16 +178,45 @@ The system requires a secret key defined via the `TOKEN_ENCRYPTION_KEY` environm
 > [!CAUTION]
 > **Keep your encryption key safe!** If you lose or rotate the `TOKEN_ENCRYPTION_KEY`, all previously encrypted GitHub tokens stored in the database will become unrecoverable, and you will need to re-authenticate all accounts.
 
-### Seeding Reviewer Accounts
+### Reviewer Accounts: OAuth vs Seed CLI
 
-To securely encrypt and store reviewer accounts in the database without an interactive UI:
+There are two ways to register and configure a reviewer's personal GitHub access token:
+1. **OAuth Flow (Preferred)**: Allows reviewers to securely authenticate through a web browser using GitHub OAuth.
+2. **Seed CLI (Backup/Emergency)**: Allows administrators to manually seed credentials directly via the server console:
+   ```bash
+   go run ./cmd/agent-frei seed-account --login <github_username> --token <github_pat>
+   ```
 
-```bash
-# Seed a reviewer account with their personal access token
-go run ./cmd/agent-frei seed-account --login <github_username> --token <github_pat>
-```
+### OAuth & Administration Setup
 
-The CLI securely encrypts the token using the configured `TOKEN_ENCRYPTION_KEY` and upserts the account in the `github_accounts` database table.
+To enable OAuth connections, configure the following variables in your `.env`:
+- **`GITHUB_OAUTH_CLIENT_ID`**: The Client ID of your GitHub OAuth Application.
+- **`GITHUB_OAUTH_CLIENT_SECRET`**: The Client Secret of your GitHub OAuth Application.
+- **`GITHUB_OAUTH_REDIRECT_URL`**: Must match the callback URL registered in GitHub OAuth settings (e.g. `https://<your-host>/oauth/github/callback`).
+- **`GITHUB_OAUTH_SCOPES`**: Scopes to request from the user (default: `repo` if empty).
+- **`ADMIN_TOKEN`**: A shared secret string used to protect administrative endpoints.
+- **`MAX_REVIEWER_ACCOUNTS`**: Maximum number of active reviewer accounts allowed (default: `6`).
+- **`ADMIN_OAUTH_RPM`**: Rate limit for initiating OAuth authorizations per IP (default: `10` requests per minute).
+
+#### Endpoints
+
+All admin endpoints require authorization via the `admin_token` parameter in either the HTTP header `X-Admin-Token` or the URL query `?admin_token=...`:
+* **`GET /oauth/github/start`**: Initiates OAuth flow, redirects user to GitHub authorize screen.
+* **`GET /oauth/github/callback`**: Internal endpoint handles OAuth callback, exchanges code, encrypts token and registers reviewer in database.
+* **`GET /admin/accounts`**: Returns JSON list of all registered reviewers, their statuses, and `last_used_at` timestamps (confidential tokens are excluded from output).
+* **`POST /admin/accounts/{login}/disable`**: Disables the specified reviewer account from the review pool.
+
+### Webhook Body Limit
+
+Incoming webhook payloads are limited to a maximum size of **5 MiB**.
+If a payload exceeds this limit, the HTTP server immediately rejects the request with a **`413 Request Entity Too Large`** response code, without parsing the JSON.
+
+### Installation Lifecycle & Suspended State
+
+The agent automatically tracks the state of the GitHub App installations via the `installation` event:
+* **`created` / `unsuspend` / `new_permissions_accepted`**: Activates or unsuspends the installation.
+* **`suspend` / `deleted`**: Places the installation in a suspended state (`suspended_at = now()`).
+* If an event (e.g. Pull Request trigger) is received for a **suspended** installation, the server logs the incident and rejects queue processing with the decision **`skipped_suspended`**, preventing jobs from running on unauthorized installations.
 
 ## Project Design & Plans
 

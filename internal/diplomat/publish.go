@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 
 	"agent-frei-igi/internal/config"
@@ -31,6 +30,7 @@ type PublicationStore interface {
 // GitHubReviewClient defines requirements for publishing pull request reviews.
 type GitHubReviewClient interface {
 	CreatePullReview(ctx context.Context, token, owner, repo string, prNumber int, req githubapp.ReviewRequest) (int64, error)
+	GetInstallationToken(ctx context.Context, githubInstID int64) (string, error)
 }
 
 // Publisher orchestrates review results serialization and distribution to GitHub.
@@ -118,10 +118,6 @@ func (p *Publisher) Publish(ctx context.Context, job *domain.ReviewJob, result *
 	if token == "" {
 		if p.cfg.FFAppBotPublishFallback {
 			log.Printf("[DIPLOMAT] User token unavailable. Falling back to App Bot publication for installation %d.", job.InstallationID)
-			pemBytes, err := os.ReadFile(p.cfg.GitHubAppPrivateKeyPath)
-			if err != nil {
-				return fmt.Errorf("failed to read private key PEM file for fallback: %w", err)
-			}
 
 			inst, err := p.store.GetInstallation(ctx, job.InstallationID)
 			if err != nil {
@@ -131,8 +127,7 @@ func (p *Publisher) Publish(ctx context.Context, job *domain.ReviewJob, result *
 				return fmt.Errorf("installation %d not found in database", job.InstallationID)
 			}
 
-			ghClient := githubapp.NewClient(p.cfg.GitHubAPIBaseURL, p.cfg.GitHubAppID, pemBytes)
-			appToken, err := ghClient.GetInstallationToken(ctx, inst.GitHubInstallationID)
+			appToken, err := p.gh.GetInstallationToken(ctx, inst.GitHubInstallationID)
 			if err != nil {
 				return fmt.Errorf("failed to get installation access token for fallback: %w", err)
 			}

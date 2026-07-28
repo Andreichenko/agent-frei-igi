@@ -182,7 +182,7 @@ func TestWorker_Pipeline_CancelledMidFlight(t *testing.T) {
 		t.Fatal("expected pipeline to return cancel error, got nil")
 	}
 
-	if !errors.Is(err, context.Canceled) && err.Error() != "job cancelled in database" {
+	if !errors.Is(err, context.Canceled) && !errors.Is(err, ErrJobCancelled) {
 		t.Errorf("expected cancellation error, got %v", err)
 	}
 }

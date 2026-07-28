@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -12,14 +11,14 @@ import (
 )
 
 // runPipeline executes the review stages (detective -> memory -> critic -> diplomat).
-// detective and critic are real stages. memory and diplomat are stubs.
+// detective, critic, and diplomat are real stages. memory is a stub.
 func (w *Worker) runPipeline(ctx context.Context, job *domain.ReviewJob) (json.RawMessage, error) {
 	// --- 1. Detective Stage ---
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if w.isCancelledInDB(ctx, job.ID, job.LockGeneration) {
-		return nil, errors.New("job cancelled in database")
+		return nil, ErrJobCancelled
 	}
 
 	log.Printf("[PIPELINE] Running stage \"detective\" for job %s...", job.ID)
@@ -44,7 +43,7 @@ func (w *Worker) runPipeline(ctx context.Context, job *domain.ReviewJob) (json.R
 		return nil, err
 	}
 	if w.isCancelledInDB(ctx, job.ID, job.LockGeneration) {
-		return nil, errors.New("job cancelled in database")
+		return nil, ErrJobCancelled
 	}
 
 	log.Println("[PIPELINE] Running stage \"memory\"...")
@@ -59,7 +58,7 @@ func (w *Worker) runPipeline(ctx context.Context, job *domain.ReviewJob) (json.R
 		return nil, err
 	}
 	if w.isCancelledInDB(ctx, job.ID, job.LockGeneration) {
-		return nil, errors.New("job cancelled in database")
+		return nil, ErrJobCancelled
 	}
 
 	log.Printf("[PIPELINE] Running stage \"critic\" for job %s...", job.ID)
@@ -84,7 +83,7 @@ func (w *Worker) runPipeline(ctx context.Context, job *domain.ReviewJob) (json.R
 		return nil, err
 	}
 	if w.isCancelledInDB(ctx, job.ID, job.LockGeneration) {
-		return nil, errors.New("job cancelled in database")
+		return nil, ErrJobCancelled
 	}
 
 	log.Printf("[PIPELINE] Running stage \"diplomat\" for job %s...", job.ID)
@@ -98,7 +97,7 @@ func (w *Worker) runPipeline(ctx context.Context, job *domain.ReviewJob) (json.R
 		return nil, err
 	}
 	if w.isCancelledInDB(ctx, job.ID, job.LockGeneration) {
-		return nil, errors.New("job cancelled in database")
+		return nil, ErrJobCancelled
 	}
 
 	return json.RawMessage(resultBytes), nil

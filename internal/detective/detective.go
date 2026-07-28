@@ -20,19 +20,21 @@ type InstallationGetter interface {
 
 // Detective coordinates auth and download from GitHub to build review context.
 type Detective struct {
-	cfg config.Config
-	db  InstallationGetter
+	cfg      config.Config
+	db       InstallationGetter
+	ghClient *githubapp.Client
 }
 
 // New initializes a new Detective coordinator.
-func New(cfg *config.Config, db InstallationGetter) *Detective {
+func New(cfg *config.Config, db InstallationGetter, ghClient *githubapp.Client) *Detective {
 	var c config.Config
 	if cfg != nil {
 		c = *cfg
 	}
 	return &Detective{
-		cfg: c,
-		db:  db,
+		cfg:      c,
+		db:       db,
+		ghClient: ghClient,
 	}
 }
 
@@ -43,15 +45,19 @@ func (d *Detective) Build(ctx context.Context, job *domain.ReviewJob) (*domain.R
 		return nil, errors.New("cannot build context for nil job")
 	}
 
-	// Fail fast if credentials are not configured
-	if d.cfg.GitHubAppID == "" || d.cfg.GitHubAppPrivateKeyPath == "" {
-		return nil, errors.New("GitHub App credentials (GITHUB_APP_ID or GITHUB_APP_PRIVATE_KEY_PATH) are not configured")
-	}
+	var pemBytes []byte
+	if d.ghClient == nil {
+		// Fail fast if credentials are not configured
+		if d.cfg.GitHubAppID == "" || d.cfg.GitHubAppPrivateKeyPath == "" {
+			return nil, errors.New("GitHub App credentials (GITHUB_APP_ID or GITHUB_APP_PRIVATE_KEY_PATH) are not configured")
+		}
 
-	// Read private key PEM file
-	pemBytes, err := os.ReadFile(d.cfg.GitHubAppPrivateKeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read private key PEM file: %w", err)
+		// Read private key PEM file
+		var err error
+		pemBytes, err = os.ReadFile(d.cfg.GitHubAppPrivateKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read private key PEM file: %w", err)
+		}
 	}
 
 	// 1. Get installation from DB
@@ -71,7 +77,10 @@ func (d *Detective) Build(ctx context.Context, job *domain.ReviewJob) (*domain.R
 	owner, repo := parts[0], parts[1]
 
 	// 3. Request token & fetch files from API
-	ghClient := githubapp.NewClient(d.cfg.GitHubAPIBaseURL, d.cfg.GitHubAppID, pemBytes)
+	ghClient := d.ghClient
+	if ghClient == nil {
+		ghClient = githubapp.NewClient(d.cfg.GitHubAPIBaseURL, d.cfg.GitHubAppID, pemBytes)
+	}
 	token, err := ghClient.GetInstallationToken(ctx, inst.GitHubInstallationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get installation access token: %w", err)
