@@ -54,6 +54,10 @@ func TestStore_Integration_EnqueueWebhook(t *testing.T) {
 		t.Fatalf("migration failed: %v", err)
 	}
 
+	if _, err := store.DB().ExecContext(ctx, "TRUNCATE review_jobs, installations CASCADE"); err != nil {
+		t.Fatalf("failed to truncate tables: %v", err)
+	}
+
 	// Whitelist review logins
 	enqueuer := queue.NewEnqueuer(store, []string{"alice", "bob"})
 
@@ -189,6 +193,10 @@ func TestStore_Integration_WorkerLifeCycle(t *testing.T) {
 
 	if err := store.Migrate(ctx); err != nil {
 		t.Fatalf("migration failed: %v", err)
+	}
+
+	if _, err := store.DB().ExecContext(ctx, "TRUNCATE review_jobs, installations CASCADE"); err != nil {
+		t.Fatalf("failed to truncate tables: %v", err)
 	}
 
 	// 1. Setup a pending job manually
