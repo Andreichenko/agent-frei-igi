@@ -68,6 +68,27 @@ make test
 # Or: go test -v ./...
 ```
 
+## GitHub App Webhook Setup
+
+To receive events from GitHub, configure a Webhook in your GitHub App settings pointing to:
+`https://<your-host-address>/webhooks/github`
+
+### Subscribed Events
+
+Ensure you subscribe to the following events in the GitHub App configuration:
+- **`Installation`** (to handle app install, suspend, or delete events)
+- **`Pull request`** (to process code changes, assignments, and draft states)
+- **`Issue comment`** (to trigger actions via `@mention` on pull requests)
+
+### Required Environment Variables
+
+Configure these variables in your `.env` file:
+- **`GITHUB_WEBHOOK_SECRET`**: The secret used to secure and sign the webhooks payload. Incoming unsigned or incorrectly signed requests will be rejected with 401.
+- **`REVIEWER_LOGINS`**: Comma-separated list of reviewer accounts in priority order (e.g. `alice,bob,carol`).
+
+> [!NOTE]
+> For this milestone, when a webhook triggers a review, the agent updates installation states and schedules a `pending` job in the Postgres queue. The agent does not publish reviews back to GitHub yet.
+
 ## Secrets and Token Encryption
 
 Reviewer account access tokens are stored in the database as encrypted bytes (`access_token_enc`) using the AES-256-GCM encryption algorithm.

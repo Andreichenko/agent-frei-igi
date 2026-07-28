@@ -49,6 +49,11 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+// DB returns the underlying sql.DB connection. Used primarily for integration testing.
+func (s *Store) DB() *sql.DB {
+	return s.db
+}
+
 // Migrate applies all embedded SQL migrations in sequential order.
 // Uses schema_migrations table to track already applied files.
 func (s *Store) Migrate(ctx context.Context) error {
@@ -172,15 +177,43 @@ func (s *Store) GetInstallation(ctx context.Context, id int64) (*domain.Installa
 	return inst, nil
 }
 
+// GetInstallationByGitHubID retrieves a GitHub App installation record by its GitHub installation ID.
+func (s *Store) GetInstallationByGitHubID(ctx context.Context, githubInstallationID int64) (*domain.Installation, error) {
+	query := `
+		SELECT id, github_installation_id, account_login, account_type, suspended_at, created_at, updated_at
+		FROM installations
+		WHERE github_installation_id = $1
+	`
+	inst := &domain.Installation{}
+	err := s.db.QueryRowContext(ctx, query, githubInstallationID).Scan(
+		&inst.ID,
+		&inst.GitHubInstallationID,
+		&inst.AccountLogin,
+		&inst.AccountType,
+		&inst.SuspendedAt,
+		&inst.CreatedAt,
+		&inst.UpdatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get installation by github id: %w", err)
+	}
+
+	return inst, nil
+}
+
 // CreateJob inserts a new review job into the queue.
 // Returns ErrJobAlreadyExists on unique constraint violation.
 func (s *Store) CreateJob(ctx context.Context, job *domain.ReviewJob) error {
 	query := `
 		INSERT INTO review_jobs (
 			installation_id, repo_full_name, pr_number, head_sha, base_sha,
-			publisher_account_id, status, lock_generation, locked_until, locked_by,
-			attempt, last_error, context_blob, result_blob, prompt_version
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			publisher_account_id, publisher_login, status, lock_generation, locked_until,
+			locked_by, attempt, last_error, context_blob, result_blob, prompt_version
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		RETURNING id, created_at, updated_at
 	`
 	err := s.db.QueryRowContext(ctx, query,
@@ -190,6 +223,7 @@ func (s *Store) CreateJob(ctx context.Context, job *domain.ReviewJob) error {
 		job.HeadSHA,
 		job.BaseSHA,
 		job.PublisherAccountID,
+		job.PublisherLogin,
 		job.Status,
 		job.LockGeneration,
 		job.LockedUntil,
@@ -221,8 +255,8 @@ func isUniqueViolation(err error) bool {
 func (s *Store) GetJob(ctx context.Context, id uuid.UUID) (*domain.ReviewJob, error) {
 	query := `
 		SELECT id, installation_id, repo_full_name, pr_number, head_sha, base_sha,
-		       publisher_account_id, status, lock_generation, locked_until, locked_by,
-		       attempt, last_error, context_blob, result_blob, prompt_version,
+		       publisher_account_id, publisher_login, status, lock_generation, locked_until,
+		       locked_by, attempt, last_error, context_blob, result_blob, prompt_version,
 		       created_at, updated_at
 		FROM review_jobs
 		WHERE id = $1
@@ -236,6 +270,7 @@ func (s *Store) GetJob(ctx context.Context, id uuid.UUID) (*domain.ReviewJob, er
 		&job.HeadSHA,
 		&job.BaseSHA,
 		&job.PublisherAccountID,
+		&job.PublisherLogin,
 		&job.Status,
 		&job.LockGeneration,
 		&job.LockedUntil,
@@ -308,4 +343,53 @@ func (s *Store) GetAccountByLogin(ctx context.Context, login string) (*domain.Gi
 	}
 
 	return acc, nil
+}
+
+// CancelJobsForPR cancels all non-terminal jobs for a specific PR except the specified head SHA (supersede logic).
+// Returns the number of cancelled jobs.
+func (s *Store) CancelJobsForPR(ctx context.Context, installationID int64, repo string, prNumber int, exceptHeadSHA string) (int64, error) {
+	query := `
+		UPDATE review_jobs
+		SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+		WHERE installation_id = $1
+		  AND repo_full_name = $2
+		  AND pr_number = $3
+		  AND head_sha != $4
+		  AND status IN ('pending', 'running', 'retry_wait')
+	`
+	res, err := s.db.ExecContext(ctx, query, installationID, repo, prNumber, exceptHeadSHA)
+	if err != nil {
+		return 0, fmt.Errorf("failed to cancel jobs: %w", err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return rows, nil
+}
+
+// CancelOpenJobsForPR cancels all open/non-terminal jobs for a specific PR (e.g. closed/converted_to_draft).
+// Returns the number of cancelled jobs.
+func (s *Store) CancelOpenJobsForPR(ctx context.Context, installationID int64, repo string, prNumber int) (int64, error) {
+	query := `
+		UPDATE review_jobs
+		SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+		WHERE installation_id = $1
+		  AND repo_full_name = $2
+		  AND pr_number = $3
+		  AND status IN ('pending', 'running', 'retry_wait')
+	`
+	res, err := s.db.ExecContext(ctx, query, installationID, repo, prNumber)
+	if err != nil {
+		return 0, fmt.Errorf("failed to cancel open jobs: %w", err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return rows, nil
 }

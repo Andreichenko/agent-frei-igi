@@ -1,0 +1,30 @@
+{
+  "action": "synchronize",
+  "number": 1,
+  "pull_request": {
+    "number": 1,
+    "state": "open",
+    "draft": false,
+    "head": {
+      "sha": "headsha333333333333333333333333333333"
+    },
+    "base": {
+      "sha": "basesha000000000000000000000000000000"
+    },
+    "assignees": [
+      {
+        "login": "alice"
+      }
+    ]
+  },
+  "repository": {
+    "full_name": "test-org/test-repo"
+  },
+  "installation": {
+    "id": 9999,
+    "account": {
+      "login": "test-org",
+      "type": "Organization"
+    }
+  }
+}

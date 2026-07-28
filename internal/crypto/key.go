@@ -12,7 +12,7 @@ type Key [32]byte
 var (
 	ErrEmptyKey        = errors.New("encryption key cannot be empty")
 	ErrInvalidBase64   = errors.New("encryption key must be a valid base64 encoded string")
-	ErrInvalidKeyLength = errors.New("decrypted key length must be exactly 32 bytes")
+	ErrInvalidKeyLength = errors.New("decoded key length must be exactly 32 bytes")
 )
 
 // ParseKey decodes a base64 encoded string into a 32-byte key.

@@ -29,6 +29,7 @@ type ReviewJob struct {
 	HeadSHA            string          `json:"head_sha"`
 	BaseSHA            string          `json:"base_sha,omitempty"`
 	PublisherAccountID *int64          `json:"publisher_account_id,omitempty"`
+	PublisherLogin     *string         `json:"publisher_login,omitempty"`
 	Status             JobStatus       `json:"status"`
 	LockGeneration     int64           `json:"lock_generation"`
 	LockedUntil        *time.Time      `json:"locked_until,omitempty"`

@@ -1,0 +1,22 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 1,
+    "pull_request": {
+      "url": "https://api.github.com/repos/test-org/test-repo/pulls/1"
+    }
+  },
+  "comment": {
+    "body": "Hey @alice please review this code!"
+  },
+  "repository": {
+    "full_name": "test-org/test-repo"
+  },
+  "installation": {
+    "id": 9999,
+    "account": {
+      "login": "test-org",
+      "type": "Organization"
+    }
+  }
+}
