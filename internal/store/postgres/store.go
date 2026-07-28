@@ -574,3 +574,28 @@ func (s *Store) UpdateJobContext(ctx context.Context, jobID uuid.UUID, gen int64
 
 	return nil
 }
+
+// UpdateJobResult updates the result_blob and prompt_version of a review job.
+// Uses ownership fencing (only updates if generation matches and is running/locked by workerID).
+func (s *Store) UpdateJobResult(ctx context.Context, jobID uuid.UUID, gen int64, workerID string, resultBytes json.RawMessage, promptVersion string) error {
+	query := `
+		UPDATE review_jobs
+		SET result_blob = $1, prompt_version = $2, updated_at = NOW()
+		WHERE id = $3 AND lock_generation = $4 AND locked_by = $5 AND status = 'running'
+	`
+	res, err := s.db.ExecContext(ctx, query, resultBytes, promptVersion, jobID, gen, workerID)
+	if err != nil {
+		return fmt.Errorf("failed to update job result query: %w", err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		return fmt.Errorf("failed to update job result: lost ownership or job not running")
+	}
+
+	return nil
+}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"agent-frei-igi/internal/config"
+	"agent-frei-igi/internal/critic"
 	"agent-frei-igi/internal/domain"
 
 	"github.com/google/uuid"
@@ -60,6 +61,10 @@ func (f *fakeStore) UpdateJobContext(ctx context.Context, jobID uuid.UUID, gen i
 	return nil
 }
 
+func (f *fakeStore) UpdateJobResult(ctx context.Context, jobID uuid.UUID, gen int64, workerID string, resultBytes json.RawMessage, promptVersion string) error {
+	return nil
+}
+
 type fakeDetective struct {
 	context *domain.ReviewContext
 	err     error
@@ -78,13 +83,33 @@ func (f *fakeDetective) Build(ctx context.Context, job *domain.ReviewJob) (*doma
 	}, nil
 }
 
+type fakeCritic struct {
+	result *critic.Result
+	err    error
+}
+
+func (f *fakeCritic) Review(ctx context.Context, reviewCtx *domain.ReviewContext) (*critic.Result, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.result != nil {
+		return f.result, nil
+	}
+	return &critic.Result{
+		PromptVersion: "critic-v1",
+		Verdict:       "LGTM",
+		Findings:      []critic.Finding{},
+	}, nil
+}
+
 func TestWorker_Pipeline_Success(t *testing.T) {
 	cfg := &config.Config{
 		WorkerID: "test-worker",
 	}
 	store := &fakeStore{}
 	det := &fakeDetective{}
-	w := NewWorker(cfg, store, det)
+	crit := &fakeCritic{}
+	w := NewWorker(cfg, store, det, crit)
 
 	wID := "test-worker"
 	job := &domain.ReviewJob{
@@ -105,13 +130,12 @@ func TestWorker_Pipeline_Success(t *testing.T) {
 		t.Fatalf("failed to parse pipeline result JSON: %v", err)
 	}
 
-	if parsed["stub"] != true {
-		t.Errorf("expected 'stub' to be true, got %v", parsed["stub"])
+	if parsed["verdict"] != "LGTM" {
+		t.Errorf("expected 'verdict' to be 'LGTM', got %v", parsed["verdict"])
 	}
 
-	stages, ok := parsed["stages"].([]interface{})
-	if !ok || len(stages) != 4 {
-		t.Errorf("expected 'stages' to contain 4 elements, got %v", parsed["stages"])
+	if parsed["prompt_version"] != "critic-v1" {
+		t.Errorf("expected 'prompt_version' to be 'critic-v1', got %v", parsed["prompt_version"])
 	}
 }
 
@@ -132,7 +156,8 @@ func TestWorker_Pipeline_CancelledMidFlight(t *testing.T) {
 	store.job.LockedBy = &wID
 
 	det := &fakeDetective{}
-	w := NewWorker(cfg, store, det)
+	crit := &fakeCritic{}
+	w := NewWorker(cfg, store, det, crit)
 
 	// Simulate cancellation by changing job status inside fakeStore concurrently
 	go func() {

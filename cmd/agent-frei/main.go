@@ -9,8 +9,10 @@ import (
 	"syscall"
 
 	"agent-frei-igi/internal/config"
+	"agent-frei-igi/internal/critic"
 	"agent-frei-igi/internal/detective"
 	"agent-frei-igi/internal/httpserver"
+	"agent-frei-igi/internal/llm"
 	"agent-frei-igi/internal/queue"
 	"agent-frei-igi/internal/store/postgres"
 	"agent-frei-igi/internal/worker"
@@ -113,8 +115,26 @@ func runWorker() {
 	}
 	defer store.Close()
 
+	var primary, fallback llm.Provider
+
+	// Resolve primary provider
+	if cfg.LLMProvider == "grok" {
+		primary = llm.NewCLIProvider("grok", cfg.GrokBin, []string{"--single"})
+	} else {
+		primary = llm.NewCLIProvider("agy", cfg.AgyBin, []string{"--print"})
+	}
+
+	// Resolve fallback provider
+	if cfg.LLMFallbackProvider == "grok" {
+		fallback = llm.NewCLIProvider("grok", cfg.GrokBin, []string{"--single"})
+	} else if cfg.LLMFallbackProvider == "agy" {
+		fallback = llm.NewCLIProvider("agy", cfg.AgyBin, []string{"--print"})
+	}
+
+	router := llm.NewRouter(primary, fallback)
+	crit := critic.New(cfg, router)
 	det := detective.New(cfg, store)
-	w := worker.NewWorker(cfg, store, det)
+	w := worker.NewWorker(cfg, store, det, crit)
 
 	// Setup context that is cancelled on SIGINT/SIGTERM
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
