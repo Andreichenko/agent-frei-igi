@@ -698,3 +698,82 @@ func (s *Store) GetPublication(ctx context.Context, jobID uuid.UUID) (*domain.Re
 	}
 	return pub, nil
 }
+
+// CountAccounts returns the number of active reviewer accounts in the database.
+func (s *Store) CountAccounts(ctx context.Context) (int, error) {
+	query := `SELECT COUNT(*) FROM github_accounts WHERE status = 'active'`
+	var count int
+	err := s.db.QueryRowContext(ctx, query).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count accounts: %w", err)
+	}
+	return count, nil
+}
+
+// UpsertAccountToken inserts or updates a reviewer account's encrypted token.
+func (s *Store) UpsertAccountToken(ctx context.Context, login string, tokenEnc []byte, expiresAt *time.Time) error {
+	query := `
+		INSERT INTO github_accounts (github_login, access_token_enc, token_expires_at, status, updated_at)
+		VALUES ($1, $2, $3, 'active', NOW())
+		ON CONFLICT (github_login) DO UPDATE
+		SET access_token_enc = EXCLUDED.access_token_enc,
+		    token_expires_at = EXCLUDED.token_expires_at,
+		    status = 'active',
+		    updated_at = NOW()
+	`
+	_, err := s.db.ExecContext(ctx, query, login, tokenEnc, expiresAt)
+	if err != nil {
+		return fmt.Errorf("failed to upsert account token: %w", err)
+	}
+	return nil
+}
+
+// ListAccounts returns all accounts in the database.
+func (s *Store) ListAccounts(ctx context.Context) ([]domain.GitHubAccount, error) {
+	query := `
+		SELECT id, github_login, status, last_used_at, created_at, updated_at
+		FROM github_accounts
+		ORDER BY github_login ASC
+	`
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list accounts: %w", err)
+	}
+	defer rows.Close()
+
+	var list []domain.GitHubAccount
+	for rows.Next() {
+		var acc domain.GitHubAccount
+		err := rows.Scan(
+			&acc.ID,
+			&acc.GitHubLogin,
+			&acc.Status,
+			&acc.LastUsedAt,
+			&acc.CreatedAt,
+			&acc.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan account: %w", err)
+		}
+		list = append(list, acc)
+	}
+	return list, nil
+}
+
+// SetAccountStatus updates status of a reviewer account (e.g. active / disabled).
+func (s *Store) SetAccountStatus(ctx context.Context, login string, status domain.AccountStatus) error {
+	query := `
+		UPDATE github_accounts
+		SET status = $1, updated_at = NOW()
+		WHERE github_login = $2
+	`
+	res, err := s.db.ExecContext(ctx, query, status, login)
+	if err != nil {
+		return fmt.Errorf("failed to set account status: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err == nil && rows == 0 {
+		return fmt.Errorf("account not found: %s", login)
+	}
+	return nil
+}

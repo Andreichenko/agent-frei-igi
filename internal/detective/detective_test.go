@@ -93,7 +93,7 @@ func TestDetective_Build_InvalidRepoName(t *testing.T) {
 	db := &fakeInstGetter{
 		inst: &domain.Installation{GitHubInstallationID: 999},
 	}
-	d := New(cfg, db)
+	d := New(cfg, db, nil)
 
 	// job with invalid repo format
 	job := &domain.ReviewJob{

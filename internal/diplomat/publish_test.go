@@ -124,6 +124,10 @@ func (m *mockGHClient) CreatePullReview(ctx context.Context, token, owner, repo 
 	return m.returnID, m.returnErr
 }
 
+func (m *mockGHClient) GetInstallationToken(ctx context.Context, githubInstID int64) (string, error) {
+	return "mock-app-token", nil
+}
+
 func TestMapResultToRequest_Formatting(t *testing.T) {
 	res := &critic.Result{
 		ModelUsed: "agy",

@@ -41,6 +41,13 @@ type Config struct {
 	FFReviewSignature           bool
 	FFRequestChanges            bool
 	FFAppBotPublishFallback     bool
+	GitHubOAuthClientID         string
+	GitHubOAuthClientSecret     string
+	GitHubOAuthRedirectURL      string
+	GitHubOAuthScopes           string
+	AdminToken                  string
+	MaxReviewerAccounts         int
+	AdminOAuthRPM               int
 }
 
 // Load reads config from environment variables and sets defaults.
@@ -179,6 +186,31 @@ func Load() *Config {
 		appBotPublishFallback = true
 	}
 
+	oauthClientID := os.Getenv("GITHUB_OAUTH_CLIENT_ID")
+	oauthClientSecret := os.Getenv("GITHUB_OAUTH_CLIENT_SECRET")
+	oauthRedirectURL := os.Getenv("GITHUB_OAUTH_REDIRECT_URL")
+	oauthScopes := os.Getenv("GITHUB_OAUTH_SCOPES")
+	if oauthScopes == "" {
+		oauthScopes = "repo"
+	}
+	adminToken := os.Getenv("ADMIN_TOKEN")
+
+	maxReviewerAccounts := 6
+	if envVal := os.Getenv("MAX_REVIEWER_ACCOUNTS"); envVal != "" {
+		val, err := strconv.Atoi(envVal)
+		if err == nil {
+			maxReviewerAccounts = val
+		}
+	}
+
+	adminOAuthRPM := 10
+	if envVal := os.Getenv("ADMIN_OAUTH_RPM"); envVal != "" {
+		val, err := strconv.Atoi(envVal)
+		if err == nil {
+			adminOAuthRPM = val
+		}
+	}
+
 	return &Config{
 		HTTPAddr:                    addr,
 		DatabaseURL:                 dbURL,
@@ -208,6 +240,13 @@ func Load() *Config {
 		FFReviewSignature:           reviewSignature,
 		FFRequestChanges:            requestChanges,
 		FFAppBotPublishFallback:     appBotPublishFallback,
+		GitHubOAuthClientID:         oauthClientID,
+		GitHubOAuthClientSecret:     oauthClientSecret,
+		GitHubOAuthRedirectURL:      oauthRedirectURL,
+		GitHubOAuthScopes:           oauthScopes,
+		AdminToken:                  adminToken,
+		MaxReviewerAccounts:         maxReviewerAccounts,
+		AdminOAuthRPM:               adminOAuthRPM,
 	}
 }
 

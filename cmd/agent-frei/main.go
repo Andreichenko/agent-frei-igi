@@ -151,7 +151,7 @@ func runWorker() {
 
 	router := llm.NewRouter(primary, fallback)
 	crit := critic.New(cfg, router)
-	det := detective.New(cfg, store)
+	det := detective.New(cfg, store, ghClient)
 	w := worker.NewWorker(cfg, store, det, crit, dip)
 
 	// Setup context that is cancelled on SIGINT/SIGTERM

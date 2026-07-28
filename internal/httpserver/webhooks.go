@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -15,6 +16,9 @@ func (s *Server) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+
+	// Limit request body to 5 MiB
+	r.Body = http.MaxBytesReader(w, r.Body, 5<<20)
 
 	// 1. Extract headers
 	event := r.Header.Get("X-GitHub-Event")
@@ -31,6 +35,12 @@ func (s *Server) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	// Read raw body bytes to verify HMAC signature
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			log.Printf("[ERROR] Request body exceeds 5 MiB limit: %v", err)
+			http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		log.Printf("[ERROR] Failed to read request body: %v", err)
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return

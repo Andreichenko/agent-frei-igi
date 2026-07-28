@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 	"time"
 
@@ -14,14 +15,24 @@ import (
 	"agent-frei-igi/internal/store/postgres"
 )
 
+// EnqueuerStore specifies the database operations required by the Enqueuer.
+type EnqueuerStore interface {
+	UpsertInstallation(ctx context.Context, inst *domain.Installation) error
+	GetInstallationByGitHubID(ctx context.Context, githubInstID int64) (*domain.Installation, error)
+	CancelOpenJobsForPR(ctx context.Context, instID int64, repo string, prNumber int) (int64, error)
+	CancelJobsForPR(ctx context.Context, instID int64, repo string, prNumber int, headSHA string) (int64, error)
+	GetAccountByLogin(ctx context.Context, login string) (*domain.GitHubAccount, error)
+	CreateJob(ctx context.Context, job *domain.ReviewJob) error
+}
+
 // Enqueuer coordinates incoming GitHub App webhooks and schedules review jobs.
 type Enqueuer struct {
-	store  *postgres.Store
+	store  EnqueuerStore
 	logins []string
 }
 
 // NewEnqueuer initializes a new Enqueuer with a database store and reviewer logins list.
-func NewEnqueuer(store *postgres.Store, logins []string) *Enqueuer {
+func NewEnqueuer(store EnqueuerStore, logins []string) *Enqueuer {
 	return &Enqueuer{
 		store:  store,
 		logins: logins,
@@ -61,9 +72,13 @@ func (e *Enqueuer) handleInstallationEvent(ctx context.Context, payload *webhook
 		AccountType:          domain.AccountType(payload.Installation.Account.Type),
 	}
 
-	if payload.Action == "suspend" {
+	action := payload.Action
+	switch action {
+	case "suspend", "deleted":
 		now := time.Now()
 		inst.SuspendedAt = &now
+	case "created", "unsuspend", "new_permissions_accepted":
+		inst.SuspendedAt = nil
 	}
 
 	err := e.store.UpsertInstallation(ctx, inst)
@@ -72,7 +87,7 @@ func (e *Enqueuer) handleInstallationEvent(ctx context.Context, payload *webhook
 	}
 
 	log.Printf("Processed installation event: id=%d action=%s login=%s",
-		payload.Installation.ID, payload.Action, payload.Installation.Account.Login)
+		payload.Installation.ID, action, payload.Installation.Account.Login)
 
 	return "processed", nil
 }
@@ -92,7 +107,7 @@ func (e *Enqueuer) handlePullRequestEvent(ctx context.Context, payload *webhook.
 	pr := payload.PullRequest
 	repo := payload.Repository.FullName
 
-	// 2. Handle PR closed or converted to draft -> cancel pending/running jobs
+	// 2. Handle PR closed or converted to draft -> cancel pending/running jobs (even if suspended)
 	isClosed := payload.Action == "closed" || pr.State == "closed"
 	isConvertedToDraft := payload.Action == "converted_to_draft"
 
@@ -103,6 +118,21 @@ func (e *Enqueuer) handlePullRequestEvent(ctx context.Context, payload *webhook.
 		}
 		log.Printf("Cancelled %d open jobs for PR %s#%d (action=%s)", cancelled, repo, pr.Number, payload.Action)
 		return "cancelled", nil
+	}
+
+	// 3. Skip enqueue if installation is suspended
+	if inst.SuspendedAt != nil {
+		log.Printf("Skipping PR event for suspended installation: %d", inst.GitHubInstallationID)
+		return "skipped_suspended", nil
+	}
+
+	// 4. Allowlist check: only process opened, reopened, synchronize, ready_for_review, assigned actions
+	switch payload.Action {
+	case "opened", "reopened", "synchronize", "ready_for_review", "assigned":
+		// Allowed, continue processing
+	default:
+		log.Printf("Ignoring PR action: %s for PR %s#%d", payload.Action, repo, pr.Number)
+		return "ignored", nil
 	}
 
 	// 3. Skip draft PRs unless it's a ready_for_review action
@@ -184,16 +214,28 @@ func (e *Enqueuer) handleIssueCommentEvent(ctx context.Context, payload *webhook
 		return "ignored", nil
 	}
 
+	// 1. Ensure installation exists in database
+	inst, err := e.ensureInstallation(ctx, payload.Installation.ID, payload)
+	if err != nil {
+		return "failed", fmt.Errorf("failed to ensure installation: %w", err)
+	}
+
+	// 1.5 Skip if installation is suspended
+	if inst.SuspendedAt != nil {
+		log.Printf("Skipping Issue Comment event for suspended installation: %d", inst.GitHubInstallationID)
+		return "skipped_suspended", nil
+	}
+
 	repo := payload.Repository.FullName
 	prNumber := payload.Issue.Number
 
-	// 1. Resolve reviewer from mention body
+	// 2. Resolve reviewer from mention body
 	chosenLogin, matched := e.matchReviewer(nil, payload.Comment.Body)
 	if !matched {
 		return "skipped", nil
 	}
 
-	// 2. Skip with log if head_sha is missing from the event payload (T2 requirement)
+	// 3. Skip with log if head_sha is missing from the event payload (T2 requirement)
 	// issue_comment events do not contain the git head_sha of the PR.
 	// We log "mention_without_sha" and skip calling GitHub API.
 	log.Printf("[mention_without_sha] PR %s#%d mentioned %s but head_sha is missing from webhook payload",
@@ -251,10 +293,10 @@ func (e *Enqueuer) matchReviewer(assignees []string, commentBody string) (string
 
 		// Check Mentions in Comment (Trigger B)
 		if commentBody != "" {
-			// Search for @login case-insensitive
-			mention := "@" + lowerWhitelist
-			lowerBody := strings.ToLower(commentBody)
-			if strings.Contains(lowerBody, mention) {
+			// Search for @login case-insensitive, matching word boundaries
+			pattern := `(?i)(^|[^A-Za-z0-9_-])@` + regexp.QuoteMeta(whitelistLogin) + `([^A-Za-z0-9_-]|$)`
+			re, err := regexp.Compile(pattern)
+			if err == nil && re.MatchString(commentBody) {
 				return whitelistLogin, true
 			}
 		}

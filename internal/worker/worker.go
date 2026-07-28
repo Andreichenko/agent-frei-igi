@@ -15,6 +15,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// ErrJobCancelled is returned when a job is cancelled in the database during execution.
+var ErrJobCancelled = errors.New("job cancelled in database")
+
 // JobRepository defines the database interactions required by the worker.
 type JobRepository interface {
 	ClaimJob(ctx context.Context, workerID string, lease time.Duration) (*domain.ReviewJob, error)
@@ -84,29 +87,36 @@ func (w *Worker) runLoop(ctx context.Context, index int) {
 	ticker := time.NewTicker(w.cfg.WorkerPollInterval)
 	defer ticker.Stop()
 
+	// Initial poll immediately on start
+	w.pollAndProcess(ctx, index)
+
 	for {
 		select {
 		case <-ctx.Done():
 			log.Printf("[WORKER-%d] Shutting down loop due to context cancellation", index)
 			return
 		case <-ticker.C:
-			job, err := w.store.ClaimJob(ctx, w.cfg.WorkerID, w.cfg.WorkerLease)
-			if err != nil {
-				log.Printf("[WORKER-%d] Error claiming job: %v", index, err)
-				continue
-			}
-
-			if job == nil {
-				// Queue is empty, keep sleeping
-				continue
-			}
-
-			log.Printf("[WORKER-%d] Claimed job: id=%s repo=%s pr=%d gen=%d attempt=%d",
-				index, job.ID, job.RepoFullName, job.PRNumber, job.LockGeneration, job.Attempt)
-
-			w.process(ctx, job)
+			w.pollAndProcess(ctx, index)
 		}
 	}
+}
+
+func (w *Worker) pollAndProcess(ctx context.Context, index int) {
+	job, err := w.store.ClaimJob(ctx, w.cfg.WorkerID, w.cfg.WorkerLease)
+	if err != nil {
+		log.Printf("[WORKER-%d] Error claiming job: %v", index, err)
+		return
+	}
+
+	if job == nil {
+		// Queue is empty, keep sleeping
+		return
+	}
+
+	log.Printf("[WORKER-%d] Claimed job: id=%s repo=%s pr=%d gen=%d attempt=%d",
+		index, job.ID, job.RepoFullName, job.PRNumber, job.LockGeneration, job.Attempt)
+
+	w.process(ctx, job)
 }
 
 func (w *Worker) process(ctx context.Context, job *domain.ReviewJob) {
