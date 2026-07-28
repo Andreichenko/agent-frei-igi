@@ -599,3 +599,102 @@ func (s *Store) UpdateJobResult(ctx context.Context, jobID uuid.UUID, gen int64,
 
 	return nil
 }
+
+// ErrPublicationExists is returned when trying to begin a publication that already exists.
+var ErrPublicationExists = errors.New("publication already exists for this job")
+
+// BeginPublication inserts a new review_publications record with pending_github state.
+// If unique violation occurs, returns ErrPublicationExists.
+func (s *Store) BeginPublication(ctx context.Context, jobID uuid.UUID, publisherAccountID *int64, kind string) (*domain.ReviewPublication, error) {
+	query := `
+		INSERT INTO review_publications (job_id, publisher_account_id, publisher_kind, state)
+		VALUES ($1, $2, $3, 'pending_github')
+		RETURNING id, job_id, publisher_account_id, publisher_kind, state, github_review_id, published_at, created_at, updated_at
+	`
+	pub := &domain.ReviewPublication{}
+	err := s.db.QueryRowContext(ctx, query, jobID, publisherAccountID, kind).Scan(
+		&pub.ID,
+		&pub.JobID,
+		&pub.PublisherAccountID,
+		&pub.PublisherKind,
+		&pub.State,
+		&pub.GitHubReviewID,
+		&pub.PublishedAt,
+		&pub.CreatedAt,
+		&pub.UpdatedAt,
+	)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return nil, ErrPublicationExists
+		}
+		return nil, fmt.Errorf("failed to begin publication: %w", err)
+	}
+	return pub, nil
+}
+
+// FinalizePublication updates state to 'published' and updates review ID and time.
+func (s *Store) FinalizePublication(ctx context.Context, jobID uuid.UUID, githubReviewID *int64, dryRun bool) error {
+	var query string
+	var err error
+	if dryRun {
+		query = `
+			UPDATE review_publications
+			SET state = 'published', github_review_id = NULL, published_at = NOW(), updated_at = NOW()
+			WHERE job_id = $1
+		`
+		_, err = s.db.ExecContext(ctx, query, jobID)
+	} else {
+		query = `
+			UPDATE review_publications
+			SET state = 'published', github_review_id = $1, published_at = NOW(), updated_at = NOW()
+			WHERE job_id = $2
+		`
+		_, err = s.db.ExecContext(ctx, query, githubReviewID, jobID)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to finalize publication: %w", err)
+	}
+	return nil
+}
+
+// FailPublication updates state to 'failed'.
+func (s *Store) FailPublication(ctx context.Context, jobID uuid.UUID, errMsg string) error {
+	query := `
+		UPDATE review_publications
+		SET state = 'failed', updated_at = NOW()
+		WHERE job_id = $1
+	`
+	_, err := s.db.ExecContext(ctx, query, jobID)
+	if err != nil {
+		return fmt.Errorf("failed to fail publication: %w", err)
+	}
+	return nil
+}
+
+// GetPublication retrieves a review publication by job ID.
+func (s *Store) GetPublication(ctx context.Context, jobID uuid.UUID) (*domain.ReviewPublication, error) {
+	query := `
+		SELECT id, job_id, publisher_account_id, publisher_kind, state, github_review_id, published_at, created_at, updated_at
+		FROM review_publications
+		WHERE job_id = $1
+	`
+	pub := &domain.ReviewPublication{}
+	err := s.db.QueryRowContext(ctx, query, jobID).Scan(
+		&pub.ID,
+		&pub.JobID,
+		&pub.PublisherAccountID,
+		&pub.PublisherKind,
+		&pub.State,
+		&pub.GitHubReviewID,
+		&pub.PublishedAt,
+		&pub.CreatedAt,
+		&pub.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get publication: %w", err)
+	}
+	return pub, nil
+}
