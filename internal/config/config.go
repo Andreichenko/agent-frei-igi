@@ -29,6 +29,14 @@ type Config struct {
 	GitHubAPIBaseURL         string
 	DetectiveMaxFiles        int
 	DetectiveMaxPatchBytes   int
+	LLMProvider              string
+	LLMFallbackProvider      string
+	LLMTimeout               time.Duration
+	LLMMaxOutputTokens       int
+	FindingConfidenceMin     float64
+	PromptBudgetTokens       int
+	AgyBin                   string
+	GrokBin                  string
 }
 
 // Load reads config from environment variables and sets defaults.
@@ -103,6 +111,50 @@ func Load() *Config {
 		}
 	}
 
+	// Parse LLM config
+	llmProvider := os.Getenv("LLM_PROVIDER")
+	if llmProvider == "" {
+		llmProvider = "agy"
+	}
+	llmFallbackProvider := os.Getenv("LLM_FALLBACK_PROVIDER")
+	if llmFallbackProvider == "" {
+		llmFallbackProvider = "grok"
+	}
+	llmTimeout := parseDuration("LLM_TIMEOUT", "120s")
+
+	maxOutputTokens := 8192
+	if envVal := os.Getenv("LLM_MAX_OUTPUT_TOKENS"); envVal != "" {
+		val, err := strconv.Atoi(envVal)
+		if err == nil {
+			maxOutputTokens = val
+		}
+	}
+
+	confidenceMin := 0.55
+	if envVal := os.Getenv("FINDING_CONFIDENCE_MIN"); envVal != "" {
+		val, err := strconv.ParseFloat(envVal, 64)
+		if err == nil {
+			confidenceMin = val
+		}
+	}
+
+	promptBudget := 100000
+	if envVal := os.Getenv("PROMPT_BUDGET_TOKENS"); envVal != "" {
+		val, err := strconv.Atoi(envVal)
+		if err == nil {
+			promptBudget = val
+		}
+	}
+
+	agyBin := os.Getenv("AGY_BIN")
+	if agyBin == "" {
+		agyBin = "agy"
+	}
+	grokBin := os.Getenv("GROK_BIN")
+	if grokBin == "" {
+		grokBin = "grok"
+	}
+
 	return &Config{
 		HTTPAddr:                 addr,
 		DatabaseURL:              dbURL,
@@ -120,6 +172,14 @@ func Load() *Config {
 		GitHubAPIBaseURL:         githubAPIBaseURL,
 		DetectiveMaxFiles:        maxFiles,
 		DetectiveMaxPatchBytes:   maxPatchBytes,
+		LLMProvider:              llmProvider,
+		LLMFallbackProvider:      llmFallbackProvider,
+		LLMTimeout:               llmTimeout,
+		LLMMaxOutputTokens:       maxOutputTokens,
+		FindingConfidenceMin:     confidenceMin,
+		PromptBudgetTokens:       promptBudget,
+		AgyBin:                   agyBin,
+		GrokBin:                  grokBin,
 	}
 }
 

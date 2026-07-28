@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"agent-frei-igi/internal/config"
+	"agent-frei-igi/internal/critic"
 	"agent-frei-igi/internal/domain"
 
 	"github.com/google/uuid"
@@ -22,6 +23,7 @@ type JobRepository interface {
 	FailJob(ctx context.Context, jobID uuid.UUID, gen int64, workerID string, errMsg string) error
 	GetJob(ctx context.Context, id uuid.UUID) (*domain.ReviewJob, error)
 	UpdateJobContext(ctx context.Context, jobID uuid.UUID, gen int64, workerID string, contextBytes json.RawMessage) error
+	UpdateJobResult(ctx context.Context, jobID uuid.UUID, gen int64, workerID string, resultBytes json.RawMessage, promptVersion string) error
 }
 
 // ContextBuilder specifies the interface for gathering review context.
@@ -29,19 +31,26 @@ type ContextBuilder interface {
 	Build(ctx context.Context, job *domain.ReviewJob) (*domain.ReviewContext, error)
 }
 
+// FindingReviewer specifies the interface for executing code reviews.
+type FindingReviewer interface {
+	Review(ctx context.Context, reviewCtx *domain.ReviewContext) (*critic.Result, error)
+}
+
 // Worker coordinates the background execution of review jobs.
 type Worker struct {
 	cfg       *config.Config
 	store     JobRepository
 	detective ContextBuilder
+	critic    FindingReviewer
 }
 
-// NewWorker initializes a new Worker with configuration, repository, and detective.
-func NewWorker(cfg *config.Config, store JobRepository, det ContextBuilder) *Worker {
+// NewWorker initializes a new Worker with configuration, repository, detective, and critic.
+func NewWorker(cfg *config.Config, store JobRepository, det ContextBuilder, crit FindingReviewer) *Worker {
 	return &Worker{
 		cfg:       cfg,
 		store:     store,
 		detective: det,
+		critic:    crit,
 	}
 }
 
