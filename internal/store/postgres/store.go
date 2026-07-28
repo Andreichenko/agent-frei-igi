@@ -264,6 +264,9 @@ func (s *Store) GetJob(ctx context.Context, id uuid.UUID) (*domain.ReviewJob, er
 		WHERE id = $1
 	`
 	job := &domain.ReviewJob{}
+	var contextBlob []byte
+	var resultBlob []byte
+
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
 		&job.ID,
 		&job.InstallationID,
@@ -279,12 +282,16 @@ func (s *Store) GetJob(ctx context.Context, id uuid.UUID) (*domain.ReviewJob, er
 		&job.LockedBy,
 		&job.Attempt,
 		&job.LastError,
-		&job.ContextBlob,
-		&job.ResultBlob,
+		&contextBlob,
+		&resultBlob,
 		&job.PromptVersion,
 		&job.CreatedAt,
 		&job.UpdatedAt,
 	)
+	if err == nil {
+		job.ContextBlob = json.RawMessage(contextBlob)
+		job.ResultBlob = json.RawMessage(resultBlob)
+	}
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -426,6 +433,8 @@ func (s *Store) ClaimJob(ctx context.Context, workerID string, lease time.Durati
 	`
 	intervalStr := fmt.Sprintf("%d microseconds", lease.Microseconds())
 	job := &domain.ReviewJob{}
+	var contextBlob []byte
+	var resultBlob []byte
 
 	err := s.db.QueryRowContext(ctx, query, workerID, intervalStr).Scan(
 		&job.ID,
@@ -442,12 +451,16 @@ func (s *Store) ClaimJob(ctx context.Context, workerID string, lease time.Durati
 		&job.LockedBy,
 		&job.Attempt,
 		&job.LastError,
-		&job.ContextBlob,
-		&job.ResultBlob,
+		&contextBlob,
+		&resultBlob,
 		&job.PromptVersion,
 		&job.CreatedAt,
 		&job.UpdatedAt,
 	)
+	if err == nil {
+		job.ContextBlob = json.RawMessage(contextBlob)
+		job.ResultBlob = json.RawMessage(resultBlob)
+	}
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
