@@ -68,6 +68,22 @@ make test
 # Or: go test -v ./...
 ```
 
+## Secrets and Token Encryption
+
+Reviewer account access tokens are stored in the database as encrypted bytes (`access_token_enc`) using the AES-256-GCM encryption algorithm.
+
+### Key Requirements
+
+The system requires a secret key defined via the `TOKEN_ENCRYPTION_KEY` environment variable.
+- The key must be a valid **Base64 encoded string** that decodes to **exactly 32 raw bytes** (256 bits).
+- Generating a new key:
+  ```bash
+  openssl rand -base64 32
+  ```
+
+> [!CAUTION]
+> **Keep your encryption key safe!** If you lose or rotate the `TOKEN_ENCRYPTION_KEY`, all previously encrypted GitHub tokens stored in the database will become unrecoverable, and you will need to re-authenticate all accounts.
+
 ## Project Design & Plans
 
 In accordance with local repository guardrails, the planning files (`PLAN.md`) and system design documents (`design/`) are excluded from Git and kept locally.

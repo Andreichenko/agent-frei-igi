@@ -202,13 +202,8 @@ func (s *Store) CreateJob(ctx context.Context, job *domain.ReviewJob) error {
 	).Scan(&job.ID, &job.CreatedAt, &job.UpdatedAt)
 
 	if err != nil {
-		// Postgres duplicate key state code: 23505
-		if err.Error() != "" { // Check string value or check pgx error if converted
-			// Handle unique constraint failure
-			// To be robust with sql/pgx standard lib wrapper:
-			if isUniqueViolation(err) {
-				return ErrJobAlreadyExists
-			}
+		if isUniqueViolation(err) {
+			return ErrJobAlreadyExists
 		}
 		return fmt.Errorf("failed to create job: %w", err)
 	}
