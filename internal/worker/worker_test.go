@@ -102,6 +102,14 @@ func (f *fakeCritic) Review(ctx context.Context, reviewCtx *domain.ReviewContext
 	}, nil
 }
 
+type fakePublisher struct {
+	err error
+}
+
+func (f *fakePublisher) Publish(ctx context.Context, job *domain.ReviewJob, result *critic.Result) error {
+	return f.err
+}
+
 func TestWorker_Pipeline_Success(t *testing.T) {
 	cfg := &config.Config{
 		WorkerID: "test-worker",
@@ -109,7 +117,8 @@ func TestWorker_Pipeline_Success(t *testing.T) {
 	store := &fakeStore{}
 	det := &fakeDetective{}
 	crit := &fakeCritic{}
-	w := NewWorker(cfg, store, det, crit)
+	pub := &fakePublisher{}
+	w := NewWorker(cfg, store, det, crit, pub)
 
 	wID := "test-worker"
 	job := &domain.ReviewJob{
@@ -157,11 +166,12 @@ func TestWorker_Pipeline_CancelledMidFlight(t *testing.T) {
 
 	det := &fakeDetective{}
 	crit := &fakeCritic{}
-	w := NewWorker(cfg, store, det, crit)
+	pub := &fakePublisher{}
+	w := NewWorker(cfg, store, det, crit, pub)
 
 	// Simulate cancellation by changing job status inside fakeStore concurrently
 	go func() {
-		time.Sleep(70 * time.Millisecond) // DELAY: middle of the stages
+		time.Sleep(20 * time.Millisecond) // DELAY: middle of the stages
 		store.mu.Lock()
 		store.job.Status = domain.JobStatusCancelled
 		store.mu.Unlock()

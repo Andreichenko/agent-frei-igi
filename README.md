@@ -132,11 +132,35 @@ To control the size of the retrieved PR context:
 
 #### Required GitHub App Permissions
 The GitHub App requires the following **Repository Permissions**:
-1. **Pull requests**: `Read` (minimum needed to retrieve PR file paths/pagination).
+1. **Pull requests**: `Read` (minimum needed to retrieve PR file paths/pagination) or `Write` if using App Bot publish fallback.
 2. **Contents**: `Read` (minimum needed to retrieve file diff patches).
 
 > [!NOTE]
-> Currently, the worker runs a **real detective stage** which authenticates as a GitHub App, downloads the list of modified files/patches, applies truncation limits and skip-paths, and writes the structured `ReviewContext` to the database (`context_blob`). The subsequent stages (`memory` ➡️ `critic` ➡️ `diplomat`) remain as stubs. The bot does not publish comments to GitHub yet.
+> Currently, the worker runs a **fully integrated pipeline**:
+> 1. **Detective**: downloads modified files and patches, applies truncation and skip rules, and writes `ReviewContext`.
+> 2. **Memory** (stub): local context reconciliation.
+> 3. **Critic**: calls local CLI models (`agy` / `grok`), parses structural findings, normalizes categories/severity, and computes fingerprints.
+> 4. **Diplomat**: maps findings to a GitHub PR Review DTO and publishes inline / file-level reviews.
+
+## Publishing PR Reviews (Diplomat)
+
+Reviews are published using the **Diplomat** stage. By default, it operates in safe **dry-run** mode.
+
+### Feature Flags
+
+Configure the following flags in your `.env` file to customize review publishing:
+- **`FF_PUBLISH_COMMENTS`**: Set to `true` to enable real review publishing to GitHub. If `false` (default), the agent registers the review as published in the database, but does not perform any HTTP POST requests to GitHub.
+- **`FF_REVIEW_SIGNATURE`**: If `true` (default), appends a signature footer to the review:
+  ```
+  ---
+  via agent-frei · model <model_used> · job <short-job-id>
+  ```
+- **`FF_APP_BOT_PUBLISH_FALLBACK`**: If `true`, the agent falls back to using the GitHub App bot identity if the reviewer's personal user token is missing or invalid. If `false` (default), the job fails with a clear error if the personal token is missing.
+
+### Token Permissions
+
+- **User Personal Tokens (PATs)**: Require PR write access (e.g. `repo` or `public_repo` scope for classic tokens, or fine-grained write access to pull requests).
+- **App Bot Fallback**: The GitHub App requires **Pull requests: Write** repository permission.
 
 ## Secrets and Token Encryption
 
@@ -153,6 +177,17 @@ The system requires a secret key defined via the `TOKEN_ENCRYPTION_KEY` environm
 
 > [!CAUTION]
 > **Keep your encryption key safe!** If you lose or rotate the `TOKEN_ENCRYPTION_KEY`, all previously encrypted GitHub tokens stored in the database will become unrecoverable, and you will need to re-authenticate all accounts.
+
+### Seeding Reviewer Accounts
+
+To securely encrypt and store reviewer accounts in the database without an interactive UI:
+
+```bash
+# Seed a reviewer account with their personal access token
+go run ./cmd/agent-frei seed-account --login <github_username> --token <github_pat>
+```
+
+The CLI securely encrypts the token using the configured `TOKEN_ENCRYPTION_KEY` and upserts the account in the `github_accounts` database table.
 
 ## Project Design & Plans
 

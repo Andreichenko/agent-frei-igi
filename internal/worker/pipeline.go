@@ -79,7 +79,7 @@ func (w *Worker) runPipeline(ctx context.Context, job *domain.ReviewJob) (json.R
 		return nil, fmt.Errorf("failed to save critic result: %w", err)
 	}
 
-	// --- 4. Diplomat Stage (Stub) ---
+	// --- 4. Diplomat Stage (Real) ---
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -87,11 +87,10 @@ func (w *Worker) runPipeline(ctx context.Context, job *domain.ReviewJob) (json.R
 		return nil, errors.New("job cancelled in database")
 	}
 
-	log.Println("[PIPELINE] Running stage \"diplomat\"...")
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-time.After(50 * time.Millisecond):
+	log.Printf("[PIPELINE] Running stage \"diplomat\" for job %s...", job.ID)
+	err = w.diplomat.Publish(ctx, job, criticResult)
+	if err != nil {
+		return nil, fmt.Errorf("diplomat stage failed: %w", err)
 	}
 
 	// Final check before marking as success

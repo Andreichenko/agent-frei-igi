@@ -13,30 +13,34 @@ import (
 
 // Config holds all configuration values for the application.
 type Config struct {
-	HTTPAddr                 string
-	DatabaseURL              string
-	TokenEncryptionKey       string
-	WebhookSecret            string
-	ReviewerLogins           []string
-	WorkerConcurrency        int
-	WorkerLease              time.Duration
-	WorkerHeartbeatInterval  time.Duration
-	WorkerPollInterval       time.Duration
-	WorkerID                 string
-	ShutdownTimeout          time.Duration
-	GitHubAppID              string
-	GitHubAppPrivateKeyPath  string
-	GitHubAPIBaseURL         string
-	DetectiveMaxFiles        int
-	DetectiveMaxPatchBytes   int
-	LLMProvider              string
-	LLMFallbackProvider      string
-	LLMTimeout               time.Duration
-	LLMMaxOutputTokens       int
-	FindingConfidenceMin     float64
-	PromptBudgetTokens       int
-	AgyBin                   string
-	GrokBin                  string
+	HTTPAddr                    string
+	DatabaseURL                 string
+	TokenEncryptionKey          string
+	WebhookSecret               string
+	ReviewerLogins              []string
+	WorkerConcurrency           int
+	WorkerLease                 time.Duration
+	WorkerHeartbeatInterval     time.Duration
+	WorkerPollInterval          time.Duration
+	WorkerID                    string
+	ShutdownTimeout             time.Duration
+	GitHubAppID                 string
+	GitHubAppPrivateKeyPath     string
+	GitHubAPIBaseURL            string
+	DetectiveMaxFiles           int
+	DetectiveMaxPatchBytes      int
+	LLMProvider                 string
+	LLMFallbackProvider         string
+	LLMTimeout                  time.Duration
+	LLMMaxOutputTokens          int
+	FindingConfidenceMin        float64
+	PromptBudgetTokens          int
+	AgyBin                      string
+	GrokBin                     string
+	FFPublishComments           bool
+	FFReviewSignature           bool
+	FFRequestChanges            bool
+	FFAppBotPublishFallback     bool
 }
 
 // Load reads config from environment variables and sets defaults.
@@ -155,31 +159,55 @@ func Load() *Config {
 		grokBin = "grok"
 	}
 
+	publishComments := false
+	if envVal := os.Getenv("FF_PUBLISH_COMMENTS"); envVal == "true" {
+		publishComments = true
+	}
+
+	reviewSignature := true
+	if envVal := os.Getenv("FF_REVIEW_SIGNATURE"); envVal == "false" {
+		reviewSignature = false
+	}
+
+	requestChanges := false
+	if envVal := os.Getenv("FF_REQUEST_CHANGES"); envVal == "true" {
+		requestChanges = true
+	}
+
+	appBotPublishFallback := false
+	if envVal := os.Getenv("FF_APP_BOT_PUBLISH_FALLBACK"); envVal == "true" {
+		appBotPublishFallback = true
+	}
+
 	return &Config{
-		HTTPAddr:                 addr,
-		DatabaseURL:              dbURL,
-		TokenEncryptionKey:       tokenKey,
-		WebhookSecret:            webhookSecret,
-		ReviewerLogins:           logins,
-		WorkerConcurrency:        concurrency,
-		WorkerLease:              lease,
-		WorkerHeartbeatInterval:  heartbeat,
-		WorkerPollInterval:       poll,
-		WorkerID:                 workerID,
-		ShutdownTimeout:          shutdown,
-		GitHubAppID:              githubAppID,
-		GitHubAppPrivateKeyPath:  githubPrivateKeyPath,
-		GitHubAPIBaseURL:         githubAPIBaseURL,
-		DetectiveMaxFiles:        maxFiles,
-		DetectiveMaxPatchBytes:   maxPatchBytes,
-		LLMProvider:              llmProvider,
-		LLMFallbackProvider:      llmFallbackProvider,
-		LLMTimeout:               llmTimeout,
-		LLMMaxOutputTokens:       maxOutputTokens,
-		FindingConfidenceMin:     confidenceMin,
-		PromptBudgetTokens:       promptBudget,
-		AgyBin:                   agyBin,
-		GrokBin:                  grokBin,
+		HTTPAddr:                    addr,
+		DatabaseURL:                 dbURL,
+		TokenEncryptionKey:          tokenKey,
+		WebhookSecret:               webhookSecret,
+		ReviewerLogins:              logins,
+		WorkerConcurrency:           concurrency,
+		WorkerLease:                 lease,
+		WorkerHeartbeatInterval:     heartbeat,
+		WorkerPollInterval:          poll,
+		WorkerID:                    workerID,
+		ShutdownTimeout:             shutdown,
+		GitHubAppID:                 githubAppID,
+		GitHubAppPrivateKeyPath:     githubPrivateKeyPath,
+		GitHubAPIBaseURL:            githubAPIBaseURL,
+		DetectiveMaxFiles:           maxFiles,
+		DetectiveMaxPatchBytes:      maxPatchBytes,
+		LLMProvider:                 llmProvider,
+		LLMFallbackProvider:         llmFallbackProvider,
+		LLMTimeout:                  llmTimeout,
+		LLMMaxOutputTokens:          maxOutputTokens,
+		FindingConfidenceMin:        confidenceMin,
+		PromptBudgetTokens:          promptBudget,
+		AgyBin:                      agyBin,
+		GrokBin:                     grokBin,
+		FFPublishComments:           publishComments,
+		FFReviewSignature:           reviewSignature,
+		FFRequestChanges:            requestChanges,
+		FFAppBotPublishFallback:     appBotPublishFallback,
 	}
 }
 
