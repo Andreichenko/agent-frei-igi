@@ -1,0 +1,65 @@
+# Local planning & design (not committed)
+PLAN.md
+plan/
+plans/
+design/
+designs/
+.design/
+docs/design/
+*.plan.md
+*-design.md
+*-design-doc.md
+
+# Local session notes, task reports, agent memory (public repo — keep out)
+.local/
+reports/
+sessions/
+*.report.md
+SESSION.md
+DECISIONS.md
+
+# OS / editor
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+*~
+*.swp
+*.swo
+.idea/
+.vscode/
+*.code-workspace
+
+# Go
+bin/
+dist/
+*.exe
+*.test
+*.out
+coverage.out
+coverage.html
+vendor/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials/
+
+# Dependencies & caches
+node_modules/
+.cache/
+tmp/
+temp/
+*.log
+
+# Local runtime data
+data/
+*.db
+*.sqlite
+*.sqlite3
+.vectorstore/
+.rag/
