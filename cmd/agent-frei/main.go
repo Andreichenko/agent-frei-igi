@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"agent-frei-igi/internal/config"
 	"agent-frei-igi/internal/httpserver"
 	"agent-frei-igi/internal/queue"
 	"agent-frei-igi/internal/store/postgres"
+	"agent-frei-igi/internal/worker"
 )
 
 // Version constant defining the current release of the application.
@@ -30,6 +33,8 @@ func main() {
 		runServer()
 	case "migrate":
 		runMigrations()
+	case "worker":
+		runWorker()
 	default:
 		fmt.Printf("Unknown command: %s\n\n", command)
 		printUsage()
@@ -44,6 +49,7 @@ func printUsage() {
 	fmt.Println("  version  Print version information")
 	fmt.Println("  serve    Start HTTP webhook server")
 	fmt.Println("  migrate  Apply database migrations")
+	fmt.Println("  worker   Start background review job worker")
 }
 
 // runMigrations initializes the store and runs all database migrations.
@@ -91,4 +97,28 @@ func runServer() {
 	if err := srv.Start(); err != nil {
 		log.Fatalf("HTTP server failed: %v", err)
 	}
+}
+
+// runWorker starts the background job execution worker loop.
+func runWorker() {
+	cfg := config.Load()
+	if cfg.DatabaseURL == "" {
+		log.Fatal("DATABASE_URL environment variable is not set")
+	}
+
+	store, err := postgres.New(cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("Failed to initialize database store: %v", err)
+	}
+	defer store.Close()
+
+	w := worker.NewWorker(cfg, store)
+
+	// Setup context that is cancelled on SIGINT/SIGTERM
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	log.Println("[WORKER] Worker started. Press Ctrl+C to shut down gracefully.")
+	w.Start(ctx)
+	log.Println("[WORKER] Graceful shutdown finished.")
 }

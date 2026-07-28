@@ -89,6 +89,38 @@ Configure these variables in your `.env` file:
 > [!NOTE]
 > For this milestone, when a webhook triggers a review, the agent updates installation states and schedules a `pending` job in the Postgres queue. The agent does not publish reviews back to GitHub yet.
 
+## Background Worker
+
+The review pipeline is processed asynchronously by a separate `worker` process. The worker claims jobs from PostgreSQL (using safe `FOR UPDATE SKIP LOCKED` locks), maintains execution leases, and handles graceful shutdowns.
+
+### Running the Worker
+
+To run the full stack, you need to execute migrations first, and then run `serve` and `worker` in two separate processes:
+
+```bash
+# 1. Apply database migrations
+./agent-frei migrate
+
+# 2. Run the HTTP webhook server (Process 1)
+./agent-frei serve
+
+# 3. Run the background worker (Process 2)
+./agent-frei worker
+```
+
+### Worker Configuration
+
+The worker can be customized using the following environment variables:
+- **`WORKER_CONCURRENCY`**: Number of parallel jobs a single worker process can execute concurrently (default: `1`).
+- **`WORKER_LEASE`**: Duration a job lock remains valid before it can be reclaimed by other workers if this worker crashes (default: `15m`).
+- **`WORKER_HEARTBEAT_INTERVAL`**: How often the worker extends its lease on running jobs (default: `30s`).
+- **`WORKER_POLL_INTERVAL`**: How long to sleep when the database queue is empty (default: `2s`).
+- **`WORKER_ID`**: Unique identifier for this worker process. If empty, defaults to `<hostname>-<pid>`.
+- **`SHUTDOWN_TIMEOUT`**: Timeout for active jobs to finish executing during graceful shutdown (default: `60s`).
+
+> [!NOTE]
+> Currently, the worker runs a **stub pipeline** showing the lifecycle stages (`detective` ➡️ `memory` ➡️ `critic` ➡️ `diplomat`) and records a stub result JSON in the database. It does not invoke the LLM or publish comments to GitHub yet.
+
 ## Secrets and Token Encryption
 
 Reviewer account access tokens are stored in the database as encrypted bytes (`access_token_enc`) using the AES-256-GCM encryption algorithm.
