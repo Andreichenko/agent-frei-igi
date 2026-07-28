@@ -28,6 +28,10 @@ func (c *Critic) Review(ctx context.Context, reviewCtx *domain.ReviewContext) (*
 	// 1. Build context prompt
 	prompt := BuildPrompt(reviewCtx, c.cfg.PromptBudgetTokens)
 
+	// Apply configured LLM execution timeout
+	ctx, cancel := context.WithTimeout(ctx, c.cfg.LLMTimeout)
+	defer cancel()
+
 	// 2. Complete prompt on providers
 	stdout, modelUsed, attempts, err := c.router.Complete(ctx, prompt)
 	if err != nil {

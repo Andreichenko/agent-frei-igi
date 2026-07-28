@@ -55,7 +55,7 @@ func (p *CLIProvider) Complete(ctx context.Context, prompt string) (string, erro
 
 	// Start command execution
 	if err := cmd.Start(); err != nil {
-		return "", p.classifyError(err, "")
+		return "", p.classifyError(ctx, err, "")
 	}
 
 	// Pipe the prompt asynchronously to stdin
@@ -77,7 +77,7 @@ func (p *CLIProvider) Complete(ctx context.Context, prompt string) (string, erro
 			_ = syscall.Kill(-pgid, syscall.SIGKILL)
 		}
 
-		return "", p.classifyError(err, stderrStr)
+		return "", p.classifyError(ctx, err, stderrStr)
 	}
 
 	return stdoutStr, nil

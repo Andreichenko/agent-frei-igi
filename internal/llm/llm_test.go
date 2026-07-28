@@ -29,6 +29,10 @@ case "$STDIN_DATA" in
     echo "unauthorized session, please login" >&2
     exit 1
     ;;
+  *sleep*)
+    sleep 5
+    echo '{"verdict": "ok-after-sleep"}'
+    ;;
   *)
     echo '{"verdict": "ok"}'
     ;;
@@ -138,5 +142,23 @@ func TestRouter_Fallback(t *testing.T) {
 
 	if stdout != `{"verdict": "ok-fallback"}` {
 		t.Errorf("unexpected stdout: %s", stdout)
+	}
+}
+
+func TestCLIProvider_Timeout(t *testing.T) {
+	binPath := createFakeBinary(t, "fake-agy")
+	p := NewCLIProvider("agy", binPath, nil)
+
+	// Set tiny timeout (50ms) to trigger deadline exceeded
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	_, err := p.Complete(ctx, "trigger-sleep")
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+
+	if !errors.Is(err, context.DeadlineExceeded) && !strings.Contains(err.Error(), "context deadline exceeded") && !errors.Is(err, context.Canceled) {
+		t.Errorf("expected deadline exceeded or canceled error, got: %v", err)
 	}
 }

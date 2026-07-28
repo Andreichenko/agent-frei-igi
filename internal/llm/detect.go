@@ -2,21 +2,20 @@ package llm
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"strings"
 )
 
 // classifyError analyzes exit errors and stderr to yield structured LLM errors.
-func (p *CLIProvider) classifyError(err error, stderr string) error {
+func (p *CLIProvider) classifyError(ctx context.Context, err error, stderr string) error {
 	if err == nil {
 		return nil
 	}
 
 	// Respect context cancellations (e.g. timeouts)
-	if errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "context deadline exceeded") {
-		return err
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 
 	lowerStderr := strings.ToLower(stderr)
