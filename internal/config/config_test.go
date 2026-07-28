@@ -41,3 +41,23 @@ func TestConfig_ParseTokenKey(t *testing.T) {
 		t.Error("expected error when parsing an empty configuration key, but got nil")
 	}
 }
+
+// TestConfig_ReviewerLogins verifies that REVIEWER_LOGINS is correctly split, trimmed, and ordered.
+func TestConfig_ReviewerLogins(t *testing.T) {
+	oldLogins := os.Getenv("REVIEWER_LOGINS")
+	defer os.Setenv("REVIEWER_LOGINS", oldLogins)
+
+	os.Setenv("REVIEWER_LOGINS", " alice,  , bob,carol, ")
+	cfg := Load()
+
+	expected := []string{"alice", "bob", "carol"}
+	if len(cfg.ReviewerLogins) != len(expected) {
+		t.Fatalf("expected %d logins, got %d", len(expected), len(cfg.ReviewerLogins))
+	}
+
+	for i, v := range expected {
+		if cfg.ReviewerLogins[i] != v {
+			t.Errorf("expected login at index %d to be %q, got %q", i, v, cfg.ReviewerLogins[i])
+		}
+	}
+}

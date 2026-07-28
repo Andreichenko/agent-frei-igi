@@ -1,0 +1,30 @@
+{
+  "action": "opened",
+  "number": 1,
+  "pull_request": {
+    "number": 1,
+    "state": "open",
+    "draft": false,
+    "head": {
+      "sha": "headsha222222222222222222222222222222"
+    },
+    "base": {
+      "sha": "basesha000000000000000000000000000000"
+    },
+    "assignees": [
+      {
+        "login": "eve"
+      }
+    ]
+  },
+  "repository": {
+    "full_name": "test-org/test-repo"
+  },
+  "installation": {
+    "id": 9999,
+    "account": {
+      "login": "test-org",
+      "type": "Organization"
+    }
+  }
+}

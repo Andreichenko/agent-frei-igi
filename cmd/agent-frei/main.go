@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 
 	"agent-frei-igi/internal/config"
+	"agent-frei-igi/internal/httpserver"
+	"agent-frei-igi/internal/queue"
 	"agent-frei-igi/internal/store/postgres"
 )
 
@@ -70,28 +70,25 @@ func runMigrations() {
 func runServer() {
 	cfg := config.Load()
 
-	// Register basic routes
-	http.HandleFunc("/healthz", healthzHandler)
+	var store *postgres.Store
+	var err error
 
-	log.Printf("Starting HTTP server on %s", cfg.HTTPAddr)
-	if err := http.ListenAndServe(cfg.HTTPAddr, nil); err != nil {
-		log.Fatalf("HTTP server failed to start: %v", err)
-	}
-}
-
-// healthzHandler returns 200 OK with {"ok":true} JSON payload.
-func healthzHandler(w http.ResponseWriter, r *http.Request) {
-	// Only allow GET requests for the healthcheck
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
+	// Database is optional for running serve, but required to handle webhooks successfully
+	if cfg.DatabaseURL != "" {
+		store, err = postgres.New(cfg.DatabaseURL)
+		if err != nil {
+			log.Fatalf("Failed to initialize database store: %v", err)
+		}
+		defer store.Close()
+		log.Println("Database connection established for server.")
+	} else {
+		log.Println("[WARN] DATABASE_URL is not set. Webhook events requiring DB operations will fail with 503.")
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	enqueuer := queue.NewEnqueuer(store, cfg.ReviewerLogins)
+	srv := httpserver.New(cfg, store, enqueuer)
 
-	response := map[string]bool{"ok": true}
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		log.Printf("Failed to encode healthz response: %v", err)
+	if err := srv.Start(); err != nil {
+		log.Fatalf("HTTP server failed: %v", err)
 	}
 }
