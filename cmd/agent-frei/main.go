@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -8,6 +9,7 @@ import (
 	"os"
 
 	"agent-frei-igi/internal/config"
+	"agent-frei-igi/internal/store/postgres"
 )
 
 // Version constant defining the current release of the application.
@@ -26,6 +28,8 @@ func main() {
 		fmt.Printf("agent-frei version %s\n", Version)
 	case "serve":
 		runServer()
+	case "migrate":
+		runMigrations()
 	default:
 		fmt.Printf("Unknown command: %s\n\n", command)
 		printUsage()
@@ -39,6 +43,27 @@ func printUsage() {
 	fmt.Println("Available commands:")
 	fmt.Println("  version  Print version information")
 	fmt.Println("  serve    Start HTTP webhook server")
+	fmt.Println("  migrate  Apply database migrations")
+}
+
+// runMigrations initializes the store and runs all database migrations.
+func runMigrations() {
+	cfg := config.Load()
+	if cfg.DatabaseURL == "" {
+		log.Fatal("DATABASE_URL environment variable is not set")
+	}
+
+	store, err := postgres.New(cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("Failed to initialize database store: %v", err)
+	}
+	defer store.Close()
+
+	log.Println("Starting database migrations...")
+	if err := store.Migrate(context.Background()); err != nil {
+		log.Fatalf("Migration execution failed: %v", err)
+	}
+	log.Println("Migrations executed successfully.")
 }
 
 // runServer starts the HTTP server listening on the address from configuration.

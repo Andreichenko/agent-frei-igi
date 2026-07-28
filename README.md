@@ -30,6 +30,17 @@ make compose-up
 # Or: docker compose up -d
 ```
 
+### Running Migrations
+
+Before starting the server, apply database migrations to initialize the schema:
+
+```bash
+# Apply database migrations
+go run ./cmd/agent-frei migrate
+```
+
+Ensure `DATABASE_URL` is configured in your `.env` file.
+
 ### Running the Server
 
 Start the HTTP Webhook server locally:
