@@ -271,3 +271,51 @@ func TestEnqueuer_PRActionAllowlist(t *testing.T) {
 		t.Errorf("expected cancelled for closed action, got %q", decision)
 	}
 }
+
+// TestEnqueuer_SuspendedInstall_ClosedPR_Cancels verifies that when an installation
+// is suspended and a PR is closed, open jobs are still cancelled (not skipped_suspended).
+func TestEnqueuer_SuspendedInstall_ClosedPR_Cancels(t *testing.T) {
+	store := newMockEnqueuerStore()
+	e := NewEnqueuer(store, []string{"alice"})
+
+	// Mark installation 100 as suspended
+	now := time.Now()
+	store.installations[100] = &domain.Installation{
+		ID:                   1,
+		GitHubInstallationID: 100,
+		AccountLogin:         "test-org",
+		AccountType:          domain.AccountTypeOrganization,
+		SuspendedAt:          &now,
+	}
+
+	ctx := context.Background()
+
+	payload := &webhook.WebhookPayload{
+		Action: "closed",
+		Installation: &webhook.GitHubInstallationPayload{
+			ID: 100,
+			Account: webhook.GitHubAccountPayload{
+				Login: "test-org",
+				Type:  "Organization",
+			},
+		},
+		Repository: &webhook.GitHubRepositoryPayload{
+			FullName: "owner/repo",
+		},
+		PullRequest: &webhook.GitHubPRPayload{
+			Number: 42,
+			State:  "closed",
+			Head:   webhook.GitHubPRHeadBasePayload{SHA: "abc"},
+			Base:   webhook.GitHubPRHeadBasePayload{SHA: "def"},
+		},
+	}
+
+	decision, err := e.HandleEvent(ctx, "pull_request", payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Must be "cancelled", not "skipped_suspended" — cancellation takes priority
+	if decision != "cancelled" {
+		t.Errorf("expected cancelled for closed PR on suspended installation, got %q", decision)
+	}
+}

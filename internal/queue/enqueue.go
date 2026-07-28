@@ -104,16 +104,10 @@ func (e *Enqueuer) handlePullRequestEvent(ctx context.Context, payload *webhook.
 		return "failed", fmt.Errorf("failed to ensure installation: %w", err)
 	}
 
-	// 1.5 Skip enqueue if installation is suspended
-	if inst.SuspendedAt != nil {
-		log.Printf("Skipping PR event for suspended installation: %d", inst.GitHubInstallationID)
-		return "skipped_suspended", nil
-	}
-
 	pr := payload.PullRequest
 	repo := payload.Repository.FullName
 
-	// 2. Handle PR closed or converted to draft -> cancel pending/running jobs
+	// 2. Handle PR closed or converted to draft -> cancel pending/running jobs (even if suspended)
 	isClosed := payload.Action == "closed" || pr.State == "closed"
 	isConvertedToDraft := payload.Action == "converted_to_draft"
 
@@ -126,7 +120,13 @@ func (e *Enqueuer) handlePullRequestEvent(ctx context.Context, payload *webhook.
 		return "cancelled", nil
 	}
 
-	// 2.5 Allowlist check: only process opened, reopened, synchronize, ready_for_review, assigned actions
+	// 3. Skip enqueue if installation is suspended
+	if inst.SuspendedAt != nil {
+		log.Printf("Skipping PR event for suspended installation: %d", inst.GitHubInstallationID)
+		return "skipped_suspended", nil
+	}
+
+	// 4. Allowlist check: only process opened, reopened, synchronize, ready_for_review, assigned actions
 	switch payload.Action {
 	case "opened", "reopened", "synchronize", "ready_for_review", "assigned":
 		// Allowed, continue processing
