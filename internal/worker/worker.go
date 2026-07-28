@@ -21,19 +21,27 @@ type JobRepository interface {
 	CompleteJob(ctx context.Context, jobID uuid.UUID, gen int64, workerID string, result json.RawMessage) error
 	FailJob(ctx context.Context, jobID uuid.UUID, gen int64, workerID string, errMsg string) error
 	GetJob(ctx context.Context, id uuid.UUID) (*domain.ReviewJob, error)
+	UpdateJobContext(ctx context.Context, jobID uuid.UUID, gen int64, workerID string, contextBytes json.RawMessage) error
+}
+
+// ContextBuilder specifies the interface for gathering review context.
+type ContextBuilder interface {
+	Build(ctx context.Context, job *domain.ReviewJob) (*domain.ReviewContext, error)
 }
 
 // Worker coordinates the background execution of review jobs.
 type Worker struct {
-	cfg   *config.Config
-	store JobRepository
+	cfg       *config.Config
+	store     JobRepository
+	detective ContextBuilder
 }
 
-// NewWorker initializes a new Worker with configuration and repository.
-func NewWorker(cfg *config.Config, store JobRepository) *Worker {
+// NewWorker initializes a new Worker with configuration, repository, and detective.
+func NewWorker(cfg *config.Config, store JobRepository, det ContextBuilder) *Worker {
 	return &Worker{
-		cfg:   cfg,
-		store: store,
+		cfg:       cfg,
+		store:     store,
+		detective: det,
 	}
 }
 

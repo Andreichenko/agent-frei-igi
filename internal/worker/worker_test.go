@@ -56,12 +56,35 @@ func (f *fakeStore) GetJob(ctx context.Context, id uuid.UUID) (*domain.ReviewJob
 	return f.job, nil
 }
 
+func (f *fakeStore) UpdateJobContext(ctx context.Context, jobID uuid.UUID, gen int64, workerID string, contextBytes json.RawMessage) error {
+	return nil
+}
+
+type fakeDetective struct {
+	context *domain.ReviewContext
+	err     error
+}
+
+func (f *fakeDetective) Build(ctx context.Context, job *domain.ReviewJob) (*domain.ReviewContext, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.context != nil {
+		return f.context, nil
+	}
+	return &domain.ReviewContext{
+		JobID: job.ID.String(),
+		Files: []domain.ChangedFile{{Path: "main.go"}},
+	}, nil
+}
+
 func TestWorker_Pipeline_Success(t *testing.T) {
 	cfg := &config.Config{
 		WorkerID: "test-worker",
 	}
 	store := &fakeStore{}
-	w := NewWorker(cfg, store)
+	det := &fakeDetective{}
+	w := NewWorker(cfg, store, det)
 
 	wID := "test-worker"
 	job := &domain.ReviewJob{
@@ -108,7 +131,8 @@ func TestWorker_Pipeline_CancelledMidFlight(t *testing.T) {
 	wID := "test-worker"
 	store.job.LockedBy = &wID
 
-	w := NewWorker(cfg, store)
+	det := &fakeDetective{}
+	w := NewWorker(cfg, store, det)
 
 	// Simulate cancellation by changing job status inside fakeStore concurrently
 	go func() {

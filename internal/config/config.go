@@ -24,6 +24,11 @@ type Config struct {
 	WorkerPollInterval       time.Duration
 	WorkerID                 string
 	ShutdownTimeout          time.Duration
+	GitHubAppID              string
+	GitHubAppPrivateKeyPath  string
+	GitHubAPIBaseURL         string
+	DetectiveMaxFiles        int
+	DetectiveMaxPatchBytes   int
 }
 
 // Load reads config from environment variables and sets defaults.
@@ -74,6 +79,30 @@ func Load() *Config {
 		workerID = fmt.Sprintf("%s-%d", hostname, os.Getpid())
 	}
 
+	// Parse GitHub App configs
+	githubAppID := os.Getenv("GITHUB_APP_ID")
+	githubPrivateKeyPath := os.Getenv("GITHUB_APP_PRIVATE_KEY_PATH")
+	githubAPIBaseURL := os.Getenv("GITHUB_API_BASE_URL")
+	if githubAPIBaseURL == "" {
+		githubAPIBaseURL = "https://api.github.com"
+	}
+
+	maxFiles := 40
+	if envVal := os.Getenv("DETECTIVE_MAX_FILES"); envVal != "" {
+		val, err := strconv.Atoi(envVal)
+		if err == nil {
+			maxFiles = val
+		}
+	}
+
+	maxPatchBytes := 409600
+	if envVal := os.Getenv("DETECTIVE_MAX_PATCH_BYTES"); envVal != "" {
+		val, err := strconv.Atoi(envVal)
+		if err == nil {
+			maxPatchBytes = val
+		}
+	}
+
 	return &Config{
 		HTTPAddr:                 addr,
 		DatabaseURL:              dbURL,
@@ -86,6 +115,11 @@ func Load() *Config {
 		WorkerPollInterval:       poll,
 		WorkerID:                 workerID,
 		ShutdownTimeout:          shutdown,
+		GitHubAppID:              githubAppID,
+		GitHubAppPrivateKeyPath:  githubPrivateKeyPath,
+		GitHubAPIBaseURL:         githubAPIBaseURL,
+		DetectiveMaxFiles:        maxFiles,
+		DetectiveMaxPatchBytes:   maxPatchBytes,
 	}
 }
 
