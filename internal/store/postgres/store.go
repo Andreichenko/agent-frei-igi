@@ -3,9 +3,11 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	"agent-frei-igi/internal/domain"
 	"agent-frei-igi/migrations"
@@ -262,6 +264,9 @@ func (s *Store) GetJob(ctx context.Context, id uuid.UUID) (*domain.ReviewJob, er
 		WHERE id = $1
 	`
 	job := &domain.ReviewJob{}
+	var contextBlob []byte
+	var resultBlob []byte
+
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
 		&job.ID,
 		&job.InstallationID,
@@ -277,12 +282,16 @@ func (s *Store) GetJob(ctx context.Context, id uuid.UUID) (*domain.ReviewJob, er
 		&job.LockedBy,
 		&job.Attempt,
 		&job.LastError,
-		&job.ContextBlob,
-		&job.ResultBlob,
+		&contextBlob,
+		&resultBlob,
 		&job.PromptVersion,
 		&job.CreatedAt,
 		&job.UpdatedAt,
 	)
+	if err == nil {
+		job.ContextBlob = json.RawMessage(contextBlob)
+		job.ResultBlob = json.RawMessage(resultBlob)
+	}
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -392,4 +401,151 @@ func (s *Store) CancelOpenJobsForPR(ctx context.Context, installationID int64, r
 	}
 
 	return rows, nil
+}
+
+// ClaimJob atomically selects one claimable job and marks it running using FOR UPDATE SKIP LOCKED.
+// Returns nil, nil if the queue is empty.
+func (s *Store) ClaimJob(ctx context.Context, workerID string, lease time.Duration) (*domain.ReviewJob, error) {
+	query := `
+		WITH candidate AS (
+			SELECT id FROM review_jobs
+			WHERE
+				status IN ('pending', 'retry_wait', 'needs_reconcile')
+				OR (status = 'running' AND locked_until IS NOT NULL AND locked_until < NOW())
+			ORDER BY created_at ASC
+			FOR UPDATE SKIP LOCKED
+			LIMIT 1
+		)
+		UPDATE review_jobs j
+		SET
+			status = 'running',
+			lock_generation = j.lock_generation + 1,
+			locked_by = $1,
+			locked_until = NOW() + $2::interval,
+			attempt = j.attempt + 1,
+			updated_at = NOW()
+		FROM candidate c
+		WHERE j.id = c.id
+		RETURNING j.id, j.installation_id, j.repo_full_name, j.pr_number, j.head_sha, j.base_sha,
+		          j.publisher_account_id, j.publisher_login, j.status, j.lock_generation, j.locked_until,
+		          j.locked_by, j.attempt, j.last_error, j.context_blob, j.result_blob, j.prompt_version,
+		          j.created_at, j.updated_at
+	`
+	intervalStr := fmt.Sprintf("%d microseconds", lease.Microseconds())
+	job := &domain.ReviewJob{}
+	var contextBlob []byte
+	var resultBlob []byte
+
+	err := s.db.QueryRowContext(ctx, query, workerID, intervalStr).Scan(
+		&job.ID,
+		&job.InstallationID,
+		&job.RepoFullName,
+		&job.PRNumber,
+		&job.HeadSHA,
+		&job.BaseSHA,
+		&job.PublisherAccountID,
+		&job.PublisherLogin,
+		&job.Status,
+		&job.LockGeneration,
+		&job.LockedUntil,
+		&job.LockedBy,
+		&job.Attempt,
+		&job.LastError,
+		&contextBlob,
+		&resultBlob,
+		&job.PromptVersion,
+		&job.CreatedAt,
+		&job.UpdatedAt,
+	)
+	if err == nil {
+		job.ContextBlob = json.RawMessage(contextBlob)
+		job.ResultBlob = json.RawMessage(resultBlob)
+	}
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to claim job: %w", err)
+	}
+
+	return job, nil
+}
+
+// HeartbeatJob extends locked_until if the job is still owned by the specified workerID and lock generation.
+// Returns false if ownership is lost.
+func (s *Store) HeartbeatJob(ctx context.Context, jobID uuid.UUID, gen int64, workerID string, lease time.Duration) (bool, error) {
+	query := `
+		UPDATE review_jobs
+		SET locked_until = NOW() + $1::interval, updated_at = NOW()
+		WHERE id = $2 AND lock_generation = $3 AND locked_by = $4 AND status = 'running'
+	`
+	intervalStr := fmt.Sprintf("%d microseconds", lease.Microseconds())
+	res, err := s.db.ExecContext(ctx, query, intervalStr, jobID, gen, workerID)
+	if err != nil {
+		return false, fmt.Errorf("heartbeat query failed: %w", err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return rows > 0, nil
+}
+
+// CompleteJob sets status=completed, result_blob, clears lock fields — only if still owned by this workerID/generation.
+func (s *Store) CompleteJob(ctx context.Context, jobID uuid.UUID, gen int64, workerID string, result json.RawMessage) error {
+	query := `
+		UPDATE review_jobs
+		SET status = 'completed',
+		    result_blob = $1,
+		    locked_by = NULL,
+		    locked_until = NULL,
+		    updated_at = NOW()
+		WHERE id = $2 AND lock_generation = $3 AND locked_by = $4 AND status = 'running'
+	`
+	res, err := s.db.ExecContext(ctx, query, result, jobID, gen, workerID)
+	if err != nil {
+		return fmt.Errorf("complete query failed: %w", err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		return fmt.Errorf("failed to complete job: lost ownership or job not running")
+	}
+
+	return nil
+}
+
+// FailJob sets status=failed, last_error, clears lock fields — only if still owned by this workerID/generation.
+func (s *Store) FailJob(ctx context.Context, jobID uuid.UUID, gen int64, workerID string, errMsg string) error {
+	query := `
+		UPDATE review_jobs
+		SET status = 'failed',
+		    last_error = $1,
+		    locked_by = NULL,
+		    locked_until = NULL,
+		    updated_at = NOW()
+		WHERE id = $2 AND lock_generation = $3 AND locked_by = $4 AND status = 'running'
+	`
+	res, err := s.db.ExecContext(ctx, query, errMsg, jobID, gen, workerID)
+	if err != nil {
+		return fmt.Errorf("fail query failed: %w", err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		return fmt.Errorf("failed to fail job: lost ownership or job not running")
+	}
+
+	return nil
 }
