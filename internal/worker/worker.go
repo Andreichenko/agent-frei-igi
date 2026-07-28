@@ -36,21 +36,28 @@ type FindingReviewer interface {
 	Review(ctx context.Context, reviewCtx *domain.ReviewContext) (*critic.Result, error)
 }
 
+// ReviewPublisher specifies the interface for publishing code reviews to GitHub.
+type ReviewPublisher interface {
+	Publish(ctx context.Context, job *domain.ReviewJob, result *critic.Result) error
+}
+
 // Worker coordinates the background execution of review jobs.
 type Worker struct {
 	cfg       *config.Config
 	store     JobRepository
 	detective ContextBuilder
 	critic    FindingReviewer
+	diplomat  ReviewPublisher
 }
 
-// NewWorker initializes a new Worker with configuration, repository, detective, and critic.
-func NewWorker(cfg *config.Config, store JobRepository, det ContextBuilder, crit FindingReviewer) *Worker {
+// NewWorker initializes a new Worker with configuration, repository, detective, critic, and diplomat.
+func NewWorker(cfg *config.Config, store JobRepository, det ContextBuilder, crit FindingReviewer, dip ReviewPublisher) *Worker {
 	return &Worker{
 		cfg:       cfg,
 		store:     store,
 		detective: det,
 		critic:    crit,
+		diplomat:  dip,
 	}
 }
 

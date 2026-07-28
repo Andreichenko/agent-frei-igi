@@ -1,6 +1,7 @@
 package githubapp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -194,4 +195,61 @@ func parseNextPageURL(linkHeader string) string {
 	}
 
 	return ""
+}
+
+// ReviewComment represents a single inline comment inside a PR review.
+type ReviewComment struct {
+	Path string `json:"path"`
+	Line int    `json:"line"`
+	Side string `json:"side"` // Always "RIGHT"
+	Body string `json:"body"`
+}
+
+// ReviewRequest represents the JSON payload to create a Pull Request Review on GitHub.
+type ReviewRequest struct {
+	CommitID string          `json:"commit_id"`
+	Body     string          `json:"body"`
+	Event    string          `json:"event"`
+	Comments []ReviewComment `json:"comments,omitempty"`
+}
+
+// CreatePullReview creates a Pull Request Review on GitHub using a user or installation token.
+func (c *Client) CreatePullReview(ctx context.Context, token, owner, repo string, prNumber int, req ReviewRequest) (int64, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/reviews", c.baseURL, owner, repo, prNumber)
+
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		return 0, fmt.Errorf("failed to marshal review request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(reqBytes))
+	if err != nil {
+		return 0, err
+	}
+
+	httpReq.Header.Set("Authorization", "Bearer "+token)
+	httpReq.Header.Set("Accept", "application/vnd.github+json")
+	httpReq.Header.Set("User-Agent", "agent-frei-igi")
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return 0, fmt.Errorf("http review request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("failed to create PR review (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var respMap struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(bodyBytes, &respMap); err != nil {
+		return 0, fmt.Errorf("failed to decode review response: %w", err)
+	}
+
+	return respMap.ID, nil
 }
