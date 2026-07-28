@@ -1,0 +1,9 @@
+{
+  "token": "ghs_mockedinstallationtokenabcdefg",
+  "expires_at": "2036-07-28T18:00:00Z",
+  "permissions": {
+    "pull_requests": "read",
+    "contents": "read"
+  },
+  "repository_selection": "all"
+}

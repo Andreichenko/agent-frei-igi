@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"agent-frei-igi/internal/config"
+	"agent-frei-igi/internal/detective"
 	"agent-frei-igi/internal/httpserver"
 	"agent-frei-igi/internal/queue"
 	"agent-frei-igi/internal/store/postgres"
@@ -112,7 +113,8 @@ func runWorker() {
 	}
 	defer store.Close()
 
-	w := worker.NewWorker(cfg, store)
+	det := detective.New(cfg, store)
+	w := worker.NewWorker(cfg, store, det)
 
 	// Setup context that is cancelled on SIGINT/SIGTERM
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

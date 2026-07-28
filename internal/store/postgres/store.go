@@ -549,3 +549,28 @@ func (s *Store) FailJob(ctx context.Context, jobID uuid.UUID, gen int64, workerI
 
 	return nil
 }
+
+// UpdateJobContext updates the context_blob of a review job.
+// Uses ownership fencing (only updates if generation matches and is running/locked by workerID).
+func (s *Store) UpdateJobContext(ctx context.Context, jobID uuid.UUID, gen int64, workerID string, contextBytes json.RawMessage) error {
+	query := `
+		UPDATE review_jobs
+		SET context_blob = $1, updated_at = NOW()
+		WHERE id = $2 AND lock_generation = $3 AND locked_by = $4 AND status = 'running'
+	`
+	res, err := s.db.ExecContext(ctx, query, contextBytes, jobID, gen, workerID)
+	if err != nil {
+		return fmt.Errorf("failed to update job context query: %w", err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		return fmt.Errorf("failed to update job context: lost ownership or job not running")
+	}
+
+	return nil
+}
